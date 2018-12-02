@@ -1,0 +1,17 @@
+# allow dns queries from jail
+nat pass log on $ext_if proto udp \
+  from {{ jail_ip }} \
+  to any port domain \
+  -> $ip_pub
+
+# allow http from jail
+nat pass log on $ext_if proto tcp \
+  from {{ jail_ip }} \
+  to any port http \
+  -> $ip_pub
+
+# allow https from jail
+nat pass log on $ext_if proto tcp \
+  from {{ jail_ip }} \
+  to any port https \
+  -> $ip_pub

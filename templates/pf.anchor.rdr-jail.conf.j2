@@ -1,0 +1,7 @@
+{% for port in rdr_ports %}
+# redirect incoming connection to jump host
+rdr pass log on $ext_if proto tcp \
+  from any \
+  to $ip_pub port {{ port }} \
+  -> {{ jail_ip }} port {{ port }}
+{% endfor %}

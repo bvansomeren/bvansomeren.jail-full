@@ -1,0 +1,149 @@
+---
+# main task file
+#
+- name: ensure jail.conf contains jail stanza
+  blockinfile:
+    dest: /etc/jail.conf
+    create: yes
+    marker: "# {mark} Jail {{ jail_name }}"
+    content: |
+      {{ jail_name }} {
+        host.hostname = {{ hostname }};
+      {% if extra_opts is defined %}{% for opt in extra_opts %}  {{ opt.name }}{% if opt.option is defined %} = {{ opt.option }}{% endif %};
+      {% endfor %}
+      {% endif %}
+      }
+
+- name: enure jail dataset
+  zfs:
+    name: "{{ jail_dataset}}/{{ jail_name }}"
+    state: present
+    extra_zfs_properties: "{{ extra_zfs_properties }}"
+
+- name: ensure base FreeBSD install
+  command: tar -xf "{{ jail_freebsd_download }}/{{ item.file }}" -C "{{ jail_mountpoint }}"
+  args:
+    creates: "{{ jail_mountpoint }}/{{ item.creates }}"
+  with_items: " {{ jail_default_install }}"
+  register: freebsd_installed_in_jail
+
+- name: ensure minimal configuration is in template
+  copy:
+    remote_src: yes
+    src: "/{{ item }}"
+    dest: "{{ jail_mountpoint }}/{{ item }}"
+    force: no
+  with_items: "{{ jail_minimal_conf }}"
+
+- name: create optional zfs mounts
+  zfs:
+    name: "{{ jail_dataset}}/{{ jail_name }}/{{ item.name }}"
+    state: present
+    extra_zfs_properties: "{{ item.extra_zfs_properties }}"
+  with_items: "{{ jail_zfs_mounts }}"
+
+- name: optionally ensure jail receive further rc.conf changes
+  command: sysrc -f {{ jail_mountpoint }}/etc/rc.conf {% for rc in jail_rc_defaults %} {{rc.name}}={{rc.value}}{% endfor %} creates={{ jail_mountpoint }}/etc/rc.conf
+
+- name: ensure jail rc.conf hostname using sysrc
+  command: sysrc -f {{ jail_mountpoint }}/etc/rc.conf hostname={{ hostname }}
+  register: sysrc_changed
+  changed_when:  "'{{ hostname }} -> {{ hostname }}' not in sysrc_changed.stdout"
+
+- name: ensure jail nat /etc/pf/anchor_nat_jail.{{ jail_name }}.conf
+  template:
+    src: pf.anchor.nat-jail.conf.j2
+    dest: /etc/pf/anchor_nat_jail.{{ jail_name }}.conf
+  notify:
+  - Reload PF
+
+- name: Add nat anchor to configuration
+  lineinfile:
+    dest: /etc/pf/anchor_nat_jails.conf
+    state: present
+    line: 'include "/etc/pf/anchor_nat_jail.{{ jail_name }}.conf"'
+  notify:
+  - Reload PF
+
+- name: ensure jail nat /etc/pf/anchor_rdr_jail.{{ jail_name }}.conf
+  template:
+    src: pf.anchor.rdr-jail.conf.j2
+    dest: /etc/pf/anchor_rdr_jail.{{ jail_name }}.conf
+  when: rdr_ports is defined
+  notify:
+  - Reload PF
+
+- name: Add rdr anchor to configuration
+  lineinfile:
+    dest: /etc/pf/anchor_rdr_jails.conf
+    state: present
+    line: 'include "/etc/pf/anchor_rdr_jail.{{ jail_name }}.conf"'
+  when: rdr_ports is defined
+  notify:
+  - Reload PF
+
+- name: force PF reload so that NAT works on install
+  meta: flush_handlers
+  when: freebsd_installed_in_jail|changed
+
+- name: ensure jail is started
+  command: jail -cm {{ jail_name }}
+
+- name: add jail to runtime inventory
+  add_host:
+    name: "{{ jail_name }}"
+    groups: "freebsd, jails"
+
+- name: ensure default packages are installed
+  pkgng:
+    name: "{{ item }}"
+    jail: "{{ jail_name }}"
+    state: present
+  with_items: "{{ packages }}"
+
+- name: ensure services are enabled in jail
+  command: jexec {{ jail_name }} sysrc {{ item }}_enable="YES"
+  with_items: "{{ services }}"
+
+- name: ensure services are started inside the jail
+  command: service -j {{ jail_name }} {{ item }} start
+  ignore_errors: yes
+  with_items: "{{ services }}"
+
+- name: ensure user is created
+  command: jexec {{ jail_name }} pw useradd {{ item.name }} -g wheel -s /bin/sh -w no -m creates={{ jail_mountpoint }}/home/{{ item.name }}
+  with_items: "{{ users }}"
+
+- name: ensure ssh folder is setup if user is defined
+  command: jexec -U {{ item.name }} {{ jail_name }} mkdir -p /home/{{ item.name }}/.ssh
+  when: "{{ item.ssh | default(no) }}"
+  with_items: "{{ users }}"
+
+- name: ensure key is downloaded into authorized_keys
+  command: jexec -U {{ item.name }} {{ jail_name }} curl -o /home/{{ item.name }}/.ssh/authorized_keys {{ item.ssh_keys }} creates={{ jail_mountpoint }}/home/{{ item.name }}/.ssh/authorized_keys
+  when: "{{ item.ssh | default(no) }}"
+  with_items: "{{ users }}"
+
+- name: ensure correct folder perms .ssh
+  command: jexec -U {{ item.name }} {{ jail_name }} chmod 700 /home/{{ item.name }}/.ssh
+  when: "{{ item.ssh | default(no) }}"
+  with_items: "{{ users }}"
+
+- name: ensure correct file perms authorized_files
+  command: jexec -U {{ item.name }} {{ jail_name }} chmod 600 /home/{{ item.name }}/.ssh/authorized_keys
+  when: "{{ item.ssh | default(no) }}"
+  with_items: "{{ users }}"
+
+- name: ensure wheel group in sudoers without password
+  blockinfile:
+    dest: "{{ jail_mountpoint }}/usr/local/etc/sudoers.d/wheel"
+    create: yes
+    content: |
+      %wheel ALL=(ALL) NOPASSWD: ALL
+  when: item.sudo
+  with_items: "{{ users }}"
+
+- name: execute secondary roles
+  include_role:
+    name: "{{ item }}"
+  with_items: "{{ jail_roles }}"

@@ -1,0 +1,69 @@
+---
+# defaults file for bvansomeren.jail-full
+
+jail_location:             "/usr/local/jail"
+jail_dataset:              "zroot/jail"
+jail_mountpoint:           "{{ jail_location }}/{{ jail_name }}"
+
+jail_backup_conf:          yes
+jail_set_globals:          no
+
+jail_release:              "11.2-RELEASE"
+jail_template_name:        "{{ jail_release }}"
+
+extra_opts:
+- name: ip4.addr
+  option: "{{ jail_ip }}" 
+
+jail_default_install:
+- file: "base.txz"
+  creates: "bin/"
+
+jail_minimal_conf:
+- "etc/resolv.conf"
+- "etc/localtime"
+
+jail_freebsd_download: "/tmp/jails-freebsd-releases"
+
+jail_quota: 20G
+jail_reservation: 10G
+
+extra_zfs_properties:
+  compression: lz4
+  quota: "{{ jail_quota | default('none') }}"
+  reservation: "{{ jail_reservation | default('none') }}"
+
+#These are meant to just start minimal containers and will be applied once
+#These are not applied if the /etc/rc.conf exists within the target jail
+jail_rc_defaults:
+- name: clear_tmp_enable
+  value: "YES"
+- name: sendmail_enable
+  value: "NONE"
+- name: syslogd_flags
+  value: "-ss"
+- name: rpcbind_enable
+  value: "NO"
+
+jail_zfs_mounts: []
+
+default_packages:
+- sudo
+- curl
+- bash
+- python2
+- vim-console
+
+packages:
+- "{{ default_packages }}"
+
+services:
+- sshd
+
+users:
+ - name: barry
+   ssh: yes
+   sudo: yes
+   ssh_keys: "https://github.com/bvansomeren.keys"
+
+jail_roles: []
