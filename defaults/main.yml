@@ -2,7 +2,7 @@
 # defaults file for bvansomeren.jail-full
 
 jail_location:             "/usr/local/jail"
-jail_dataset:              "zroot/jail"
+jail_dataset:              "jail"
 jail_mountpoint:           "{{ jail_location }}/{{ jail_name }}"
 
 jail_backup_conf:          yes

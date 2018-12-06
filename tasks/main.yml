@@ -14,11 +14,15 @@
       {% endif %}
       }
 
-- name: enure jail dataset
-  zfs:
-    name: "{{ jail_dataset}}/{{ jail_name }}"
-    state: present
-    extra_zfs_properties: "{{ extra_zfs_properties }}"
+- name: ensure jail dataset
+  include_role:
+    name: bvansomeren.zfs
+    tasks_from: dataset
+  vars:
+    zfs_dataset:
+      parents: "{{ jail_dataset }}"
+      name: "{{ jail_name }}"
+      extra_zfs_properties: "{{ extra_zfs_properties }}"
 
 - name: ensure base FreeBSD install
   command: tar -xf "{{ jail_freebsd_download }}/{{ item.file }}" -C "{{ jail_mountpoint }}"
@@ -36,10 +40,14 @@
   with_items: "{{ jail_minimal_conf }}"
 
 - name: create optional zfs mounts
-  zfs:
-    name: "{{ jail_dataset}}/{{ jail_name }}/{{ item.name }}"
-    state: present
-    extra_zfs_properties: "{{ item.extra_zfs_properties }}"
+  include_role:
+    name: bvansomeren.zfs
+    tasks_from: dataset
+  vars:
+    zfs_dataset:
+      name: "{{ item.name }}"
+      extra_zfs_properties: "{{ item.extra_zfs_properties }}"
+      parents: "{{ jail_dataset }}/{{ jail_name }}"
   with_items: "{{ jail_zfs_mounts }}"
 
 - name: optionally ensure jail receive further rc.conf changes
