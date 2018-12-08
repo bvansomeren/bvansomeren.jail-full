@@ -54,8 +54,7 @@ default_packages:
 - python2
 - vim-console
 
-packages:
-- "{{ default_packages }}"
+packages: []
 
 services:
 - sshd
