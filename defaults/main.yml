@@ -51,6 +51,7 @@ default_packages:
 - sudo
 - curl
 - bash
+- bash-completion
 - python2
 - vim-console
 
@@ -59,10 +60,12 @@ packages: []
 services:
 - sshd
 
-users:
- - name: barry
-   ssh: yes
-   sudo: yes
-   ssh_keys: "https://github.com/bvansomeren.keys"
+users: []
+# - name: coffeesprout
+#   ssh: yes
+#   sudo: yes
+#   shell: /usr/local/bin/bash
+#   ssh_keys: "https://github.com/bvansomeren.keys"
+
 
 jail_roles: []
