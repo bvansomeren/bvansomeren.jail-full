@@ -1,0 +1,8 @@
+---
+- hosts: luna
+  become: True
+  roles:
+  - role: bvansomeren.jail-full
+    name: newjail
+    jail_ip: 10.0.1.53
+    hostname: newjail.local.domain
