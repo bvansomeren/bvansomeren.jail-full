@@ -12,6 +12,9 @@
       {% if extra_opts is defined %}{% for opt in extra_opts %}  {{ opt.name }}{% if opt.option is defined %} = {{ opt.option }}{% endif %};
       {% endfor %}
       {% endif %}
+      {% if jail_enable_vnet %}{% for opt in extra_opts_vnet %} {{ opt.name }}{% if opt.option is defined %} = "{{ opt.option }}"{% endif %}{% if opt.add_option is defined %} += "{{ opt.add_option }}"{% endif %};
+      {% endfor %}
+      {% endif %}
       }
 
 - name: ensure jail dataset
@@ -52,6 +55,10 @@
 
 - name: optionally ensure jail receive further rc.conf changes
   command: sysrc -f {{ jail_mountpoint }}/etc/rc.conf {% for rc in jail_rc_defaults %} {{rc.name}}={{rc.value}}{% endfor %} creates={{ jail_mountpoint }}/etc/rc.conf
+
+- name: optionally ensure jail receives vnet rc.conf changes
+  command: sysrc -f {{ jail_mountpoint }}/etc/rc.conf {% for rc in jail_rc_defaults_vnet %} {{rc.name}}={{rc.value}}{% endfor %}
+  when: jail_enable_vnet
 
 - name: ensure jail rc.conf hostname using sysrc
   command: sysrc -f {{ jail_mountpoint }}/etc/rc.conf hostname={{ hostname }}

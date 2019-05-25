@@ -5,7 +5,9 @@
     msg: "creating user: {{ jail_user }}"
 
 - name: ensure user is created
-  command: jexec {{ jail_name }} pw useradd {{ jail_user.name }} {% if jail_user.group is defined %} -g {{ jail_user.group }}{% endif %} {% if jail_user.sudo %} -G wheel {% endif %} -s {{ jail_user.shell | default('/bin/sh') }} -w no -m creates={{ jail_mountpoint }}/home/{{ jail_user.name }}
+  command: chroot {{ jail_mountpoint }} pw useradd {{ jail_user.name }} {% if jail_user.group is defined %} -g {{ jail_user.group }}{% endif %} {% if jail_user.sudo %} -G wheel {% endif %} -s {{ jail_user.shell | default('/bin/sh') }} -w no -m 
+  args:
+    creates: "{{ jail_mountpoint }}/home/{{ jail_user.name }}"
 
 - name: get the correct uid for user files
   command: jexec -U {{ jail_user.name }} {{ jail_name }} id -u

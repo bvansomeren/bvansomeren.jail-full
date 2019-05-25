@@ -5,15 +5,25 @@ jail_location:             "/usr/local/jail"
 jail_dataset:              "jail"
 jail_mountpoint:           "{{ jail_location }}/{{ jail_name }}"
 
-jail_backup_conf:          yes
-jail_set_globals:          no
+jail_backup_conf:          True
+jail_set_globals:          False
 
-jail_release:              "11.2-RELEASE"
+jail_release:              "12.0-RELEASE"
 jail_template_name:        "{{ jail_release }}"
 
-extra_opts:
-- name: ip4.addr
-  option: "{{ jail_ip }}" 
+jail_default_interface: "{{ hostvars[inventory_hostname].ansible_default_ipv4.device }}"
+
+jail_enable_vnet: True
+
+extra_opts: []
+extra_opts_vnet:
+- name: vnet
+- name: vnet.interface
+  option: "e0b_{{ jail_name }}"
+- name: exec.prestart
+  add_option: "/usr/local/sbin/jib addm {{ jail_name }} {{ jail_default_interface }}"
+- name: exec.prestop
+  add_option: "/usr/local/sbin/jib destroy {{ jail_name }}"
 
 jail_default_install:
 - file: "base.txz"
@@ -44,6 +54,12 @@ jail_rc_defaults:
   value: "-ss"
 - name: rpcbind_enable
   value: "NO"
+
+jail_rc_defaults_vnet:
+- name: "ifconfig_e0b_{{ jail_name }}"
+  value: "{{ jail_ip }}|{{ jail_subnet | default('24') }}"
+- name: defaultrouter
+  value: "{{ vnet_default_router }}"
 
 jail_zfs_mounts: []
 
