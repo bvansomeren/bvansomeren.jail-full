@@ -9,12 +9,15 @@
     content: |
       {{ jail_name }} {
         host.hostname = {{ hostname }};
-      {% if extra_opts is defined %}{% for opt in extra_opts %}  {{ opt.name }}{% if opt.option is defined %} = {{ opt.option }}{% endif %};
-      {% endfor %}
-      {% endif %}
-      {% if jail_enable_vnet %}{% for opt in extra_opts_vnet %} {{ opt.name }}{% if opt.option is defined %} = "{{ opt.option }}"{% endif %}{% if opt.add_option is defined %} += "{{ opt.add_option }}"{% endif %};
-      {% endfor %}
-      {% endif %}
+        {% if not jail_enable_vnet %}{% for opt in extra_opts_default %}  {{ opt.name }}{% if opt.option is defined %} = {{ opt.option }}{% endif %};
+        {% endfor %}
+        {% endif %}
+        {% if jail_enable_vnet %}{% for opt in extra_opts_vnet %} {{ opt.name }}{% if opt.option is defined %} = "{{ opt.option }}"{% endif %}{% if opt.add_option is defined %} += "{{ opt.add_option }}"{% endif %};
+        {% endfor %}
+        {% endif %}
+        {% if extra_opts is defined %}{% for opt in extra_opts %}  {{ opt.name }}{% if opt.option is defined %} = {{ opt.option }}{% endif %};
+        {% endfor %}
+        {% endif %}
       }
 
 - name: ensure jail dataset
@@ -26,6 +29,8 @@
       parents: "{{ jail_dataset }}"
       name: "{{ jail_name }}"
       extra_zfs_properties: "{{ extra_zfs_properties }}"
+  tags:
+  - jail_dataset
 
 - name: ensure base FreeBSD install
   command: tar -xf "{{ jail_freebsd_download }}/{{ item.file }}" -C "{{ jail_mountpoint }}"
@@ -52,6 +57,8 @@
       extra_zfs_properties: "{{ item.extra_zfs_properties }}"
       parents: "{{ jail_dataset }}/{{ jail_name }}"
   with_items: "{{ jail_zfs_mounts }}"
+  tags:
+  - jail_extra_datasets
 
 - name: optionally ensure jail receive further rc.conf changes
   command: sysrc -f {{ jail_mountpoint }}/etc/rc.conf {% for rc in jail_rc_defaults %} {{rc.name}}={{rc.value}}{% endfor %} creates={{ jail_mountpoint }}/etc/rc.conf
@@ -65,52 +72,47 @@
   register: sysrc_changed
   changed_when:  "'{{ hostname }} -> {{ hostname }}' not in sysrc_changed.stdout"
 
-- name: ensure jail nat /etc/pf/anchor_nat_jail.{{ jail_name }}.conf
-  template:
-    src: pf.anchor.nat-jail.conf.j2
-    dest: /etc/pf/anchor_nat_jail.{{ jail_name }}.conf
-  notify:
-  - Reload PF
+- name: setup nat for {{ jail_name }}
+  include_role:
+    name: bvansomeren.pf
+    tasks_from: nat
+  vars:
+    pf_nat_name: "{{ jail_name }}"
+    nat_ports: "{{ jail_nat_ports }}"
+    pf_nat_ip: "{{ jail_ip }}"
+  tags:
+  - jail_nat
 
-- name: Add nat anchor to configuration
-  lineinfile:
-    dest: /etc/pf/anchor_nat_jails.conf
-    state: present
-    line: 'include "/etc/pf/anchor_nat_jail.{{ jail_name }}.conf"'
-  notify:
-  - Reload PF
-
-- name: ensure jail nat /etc/pf/anchor_rdr_jail.{{ jail_name }}.conf
-  template:
-    src: pf.anchor.rdr-jail.conf.j2
-    dest: /etc/pf/anchor_rdr_jail.{{ jail_name }}.conf
-  when: rdr_ports is defined
-  notify:
-  - Reload PF
-
-- name: Add rdr anchor to configuration
-  lineinfile:
-    dest: /etc/pf/anchor_rdr_jails.conf
-    state: present
-    line: 'include "/etc/pf/anchor_rdr_jail.{{ jail_name }}.conf"'
-  when: rdr_ports is defined
-  notify:
-  - Reload PF
+- name: setup rdr for {{ jail_name }}
+  include_role:
+    name: bvansomeren.pf
+    tasks_from: rdr
+  vars:
+    pf_rdr_name: "{{ jail_name }}"
+    pf_rdr_ports: "{{ jail_rdr_ports }}"
+    pf_rdr_ip: "{{ jail_ip }}"
 
 - name: force PF reload so that NAT works on install
   meta: flush_handlers
   when: freebsd_installed_in_jail|changed
 
 - name: ensure jail is started
-  command: jail -cm {{ jail_name }}
+  command: service jail start
 
-- name: ensure default packages are installed
+- name: wait until {{ jail_name }} is available before ploughing on
+  wait_for:
+    host: "{{ jail_ip }}"
+    timeout: 5
+    state: started
+  delegate_to: "{{ inventory_hostname }}"
+
+- name: ensure default packages are installed to {{ jail_name }}
   pkgng:
     name: "{{ default_packages }}"
     jail: "{{ jail_name }}"
     state: present
 
-- name: ensure extra packages are installed
+- name: ensure extra packages are installed to {{ jail_name }}
   pkgng:
     name: "{{ packages }}"
     jail: "{{ jail_name }}"
@@ -127,10 +129,16 @@
     args: "-j {{ jail_name }}"
   with_items: "{{ services }}"
 
-- include_tasks: users.yml
+- include_tasks:
+    file: users.yml
+    apply:
+      tags:
+      - jailusers
   vars:
     jail_user: "{{ item }}"
   with_items: "{{ users }}"
+  tags:
+  - jailusers
 
 - name: ensure wheel group in sudoers without password
   blockinfile:

@@ -13,9 +13,15 @@ jail_template_name:        "{{ jail_release }}"
 
 jail_default_interface: "{{ hostvars[inventory_hostname].ansible_default_ipv4.device }}"
 
-jail_enable_vnet: True
+jail_enable_vnet: False
 
 extra_opts: []
+extra_opts_default:
+- name: ip4.addr
+  option: "{{ jail_ip }}"
+- name: interface
+  option: "{{ jail_interface | default(jail_default_interface) }}"
+
 extra_opts_vnet:
 - name: vnet
 - name: vnet.interface
@@ -57,7 +63,7 @@ jail_rc_defaults:
 
 jail_rc_defaults_vnet:
 - name: "ifconfig_e0b_{{ jail_name }}"
-  value: "{{ jail_ip }}|{{ jail_subnet | default('24') }}"
+  value: "{{ jail_ip }}/{{ jail_subnet | default('24') }}"
 - name: defaultrouter
   value: "{{ vnet_default_router }}"
 
@@ -85,3 +91,13 @@ users: []
 
 
 jail_roles: []
+
+jail_nat_ports:
+- port: 80
+  proto: tcp
+- port: 443
+  proto: tcp
+- port: 53
+  proto: udp
+
+jail_rdr_ports: []
